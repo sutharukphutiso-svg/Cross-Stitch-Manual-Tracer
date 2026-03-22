@@ -27,7 +27,7 @@ html,body{height:100%;overflow:hidden;font-family:'DM Sans',sans-serif;font-size
 #toolbar{height:44px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 10px;gap:4px;flex-shrink:0;overflow-x:auto}
 #canvas-wrap{flex:1;position:relative;overflow:hidden;background:var(--warm)}
 #canvas-wrap::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle,rgba(90,122,90,.04) 1px,transparent 1px);background-size:20px 20px;pointer-events:none}
-#ref-canvas{position:absolute;top:0;left:0;image-rendering:pixelated;pointer-events:none}
+#ref-canvas{display:none}
 #gc{position:absolute;top:0;left:0;image-rendering:pixelated;image-rendering:crisp-edges}
 #ov{position:absolute;top:0;left:0;pointer-events:none;image-rendering:pixelated}
 /* Eyedropper overlay canvas — sits above ref for picking */
@@ -467,7 +467,7 @@ function loadRef(file){
       document.getElementById('dropzone').style.display='none';
       document.getElementById('ref-controls').style.display='block';
       document.getElementById('empty-state').style.display='none';
-      renderRef();render();
+      render();
       pushHist('Loaded reference image');
     };
     img.src=ev.target.result;
@@ -476,22 +476,12 @@ function loadRef(file){
 }
 
 // ── REFERENCE LAYER ────────────────────────────────────────────────────────────
-function onRefOp(){refOp=parseInt(document.getElementById('ref-op').value)/100;document.getElementById('ref-opv').textContent=Math.round(refOp*100)+'%';renderRef();}
-function onRefSc(){refSc=parseInt(document.getElementById('ref-sc').value)/100;document.getElementById('ref-scv').textContent=Math.round(refSc*100)+'%';renderRef();}
-function onRefVis(){refVisible=document.getElementById('ref-vis').checked;renderRef();}
+function onRefOp(){refOp=parseInt(document.getElementById('ref-op').value)/100;document.getElementById('ref-opv').textContent=Math.round(refOp*100)+'%';render();}
+function onRefSc(){refSc=parseInt(document.getElementById('ref-sc').value)/100;document.getElementById('ref-scv').textContent=Math.round(refSc*100)+'%';render();}
+function onRefVis(){refVisible=document.getElementById('ref-vis').checked;render();}
 function renderRef(){
-  var aW=wrap.offsetWidth||800,aH=wrap.offsetHeight||600;
-  if(rc.width!==aW||rc.height!==aH){rc.width=aW;rc.height=aH;}
-  rctx.clearRect(0,0,aW,aH);
-  if(!refImg||!refVisible)return;
-  // Draw ref image aligned to grid origin, scaled by refSc
-  var ds=Math.max(0.1,CELL*ZL);
-  var gridW=COLS*ds,gridH=ROWS*ds;
-  var ox2=Math.round(-VX*ds),oy2=Math.round(-VY*ds);
-  var rw=gridW*refSc,rh=gridH*refSc;
-  rctx.globalAlpha=refOp;
-  rctx.drawImage(refImg,ox2,oy2,rw,rh);
-  rctx.globalAlpha=1;
+  // Reference is now drawn inside render() on gc canvas
+  // This stub kept for compatibility
 }
 
 // ── EYEDROPPER FROM REFERENCE ─────────────────────────────────────────────────
@@ -499,17 +489,16 @@ function getRefPixelAt(canvasX,canvasY){
   if(!refImg)return null;
   var ds=Math.max(0.1,CELL*ZL);
   var ox2=-VX*ds,oy2=-VY*ds;
-  var gridW=COLS*ds*refSc,gridH=ROWS*ds*refSc;
-  // Map canvas coords to refImg coords
-  var rx=(canvasX-ox2)/gridW*refImg.width;
-  var ry=(canvasY-oy2)/gridH*refImg.height;
+  var rw2=COLS*ds*refSc,rh2=ROWS*ds*refSc;
+  // Map canvas coords to refImg pixel coords
+  var rx=(canvasX-ox2)/rw2*refImg.width;
+  var ry=(canvasY-oy2)/rh2*refImg.height;
   if(rx<0||ry<0||rx>=refImg.width||ry>=refImg.height)return null;
-  // Draw to tiny offscreen canvas to sample pixel
   var oc2=document.createElement('canvas');oc2.width=1;oc2.height=1;
   var ox2c=oc2.getContext('2d');
   ox2c.drawImage(refImg,-Math.floor(rx),-Math.floor(ry));
-  var px=ox2c.getImageData(0,0,1,1).data;
-  return[px[0],px[1],px[2],px[3]];
+  var d=ox2c.getImageData(0,0,1,1).data;
+  return[d[0],d[1],d[2],d[3]];
 }
 function showPickedDMC(rgb){
   var hex=r2h(rgb[0],rgb[1],rgb[2]);
@@ -561,7 +550,7 @@ function resizeGrid(){
   COLS=v;ROWS=v;
   grid=Array.from({length:ROWS},function(){return new Array(COLS).fill(-1);});
   hist=[];hlab=[];
-  updSt();updColorPanel();updDMC();fitZoom();render();renderRef();
+  updSt();updColorPanel();updDMC();fitZoom();render();render();
   pushHist('Resized to '+v+'×'+v);
 }
 
@@ -572,6 +561,15 @@ function render(){
   var W=gc.width,H=gc.height,ds=Math.max(0.1,CELL*ZL);
   var sg=document.getElementById('sgr').checked,ss=document.getElementById('ssy').checked;
   ctx.clearRect(0,0,W,H);ctx.fillStyle='#f0ece3';ctx.fillRect(0,0,W,H);
+  // Draw reference image overlay on main canvas
+  if(refImg&&refVisible){
+    var rds=Math.max(0.1,CELL*ZL);
+    var rw2=COLS*rds*refSc,rh2=ROWS*rds*refSc;
+    var rx2=Math.round(-VX*rds),ry2=Math.round(-VY*rds);
+    ctx.globalAlpha=refOp;
+    ctx.drawImage(refImg,rx2,ry2,rw2,rh2);
+    ctx.globalAlpha=1;
+  }
   for(var r=0;r<ROWS;r++){
     for(var c=0;c<COLS;c++){
       var px=Math.round((c-VX)*ds),py=Math.round((r-VY)*ds);
@@ -603,7 +601,6 @@ function render(){
     octx.lineTo(Math.round((lineSt[2]-VX)*ds3+ds3/2),Math.round((lineSt[3]-VY)*ds3+ds3/2));
     octx.stroke();octx.setLineDash([]);
   }
-  renderRef();
 }
 
 // ── ZOOM & PAN ─────────────────────────────────────────────────────────────────
@@ -1319,7 +1316,7 @@ function boot(){
   updSt();updPal();
   setTimeout(function(){fitZoom();},100);
   setTimeout(function(){fitZoom();},600);
-  window.addEventListener('resize',function(){render();renderRef();});
+  window.addEventListener('resize',function(){render();render();});
 }
 if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',boot);}else{setTimeout(boot,0);}
 
